@@ -1,0 +1,134 @@
+// Prisma schema for the botlist
+// Default provider is postgresql (works on Vercel with Neon/Supabase/Vercel Postgres,
+// and on Orihost by pointing DATABASE_URL at any reachable Postgres instance).
+// To use SQLite instead (handy on Orihost with persistent disk), change the
+// provider below to "sqlite" and set DATABASE_URL="file:./prod.db".
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  discordId String   @unique
+  username  String
+  avatar    String?
+  email     String?
+  isAdmin   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  bots  Bot[]
+  votes Vote[]
+
+  servers     Server[]
+  serverVotes ServerVote[]
+  managedGuilds ManagedGuild[]
+}
+
+model Bot {
+  id          String   @id @default(cuid())
+  discordId   String   @unique
+  name        String
+  avatar      String?
+  shortDesc   String
+  longDesc    String
+  prefix      String   @default("/")
+  website     String?
+  supportUrl  String?
+  githubUrl   String?
+  tags        String[] @default([])
+  status      BotStatus @default(PENDING)
+  featured    Boolean  @default(false)
+  serverCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  votes Vote[]
+}
+
+enum BotStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Vote {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  botId  String
+  bot    Bot    @relation(fields: [botId], references: [id])
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([botId, userId, createdAt])
+  @@index([botId, userId])
+}
+
+// Public directory of Discord servers (à la Disboard), séparée du botlist.
+// Réutilise l'enum BotStatus (mêmes valeurs PENDING/APPROVED/REJECTED)
+// pour garder le même flux de modération que les bots.
+model Server {
+  id          String    @id @default(cuid())
+  discordId   String    @unique // ID du serveur Discord (guild id)
+  name        String
+  icon        String? // hash d'icône Discord — sert à construire la vraie image du serveur
+  shortDesc   String
+  longDesc    String
+  inviteUrl   String // lien d'invitation Discord permanent (discord.gg/...)
+  tags        String[] @default([])
+  status      BotStatus @default(PENDING)
+  featured    Boolean  @default(false)
+  memberCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+
+  votes ServerVote[]
+}
+
+model ServerVote {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  serverId String
+  server   Server @relation(fields: [serverId], references: [id])
+  userId   String
+  user     User   @relation(fields: [userId], references: [id])
+
+  @@unique([serverId, userId, createdAt])
+  @@index([serverId, userId])
+}
+
+// Serveur où le bot officiel Relay a été ajouté ET vérifié (présence
+// confirmée côté Discord via le token du bot, pas juste "le lien a été
+// cliqué"). C'est ce qui donne un vrai sens au bouton "Ajouter le bot" :
+// une fois vérifié, le propriétaire débloque une page de gestion réelle.
+model ManagedGuild {
+  id               String    @id @default(cuid())
+  discordId        String    @unique
+  name             String
+  icon             String?
+  botAdded         Boolean   @default(false)
+  memberCount      Int       @default(0)
+  prefix           String    @default("!")
+  welcomeChannelId String?
+  welcomeMessage   String?
+  autoRoleId       String?
+  lastSyncedAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  ownerId String
+  owner   User   @relation(fields: [ownerId], references: [id])
+}
